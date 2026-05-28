@@ -6,3 +6,4 @@ textblob
 requests
 streamlit
 numpy
+investpy
