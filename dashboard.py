@@ -287,13 +287,17 @@ if not todos_activos:
 # ─────────────────────────────────────────────────────────────
 #  TABS
 # ─────────────────────────────────────────────────────────────
-tab1,tab2,tab3,tab4,tab5,tab6 = st.tabs([
+tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8,tab9,tab10 = st.tabs([
     "📈 Rendimiento",
     "🔬 Backtesting",
     "🔮 Proyección",
     "📰 Noticias y Señal",
     "⚡ Estrategias Avanzadas",
     "🧮 Portafolio Óptimo",
+    "📋 Tablero de Noticias",
+    "📅 Calendario Económico",
+    "🔗 Correlación de Activos",
+    "📜 Historial de Señales",
 ])
 
 # ══════════════════════════════════════════════════════════════
@@ -973,3 +977,397 @@ las 3 mejores distribuciones de tu dinero:
             xaxis=dict(title="Riesgo — Volatilidad anual (%)",gridcolor="#1e3a5f"),
             yaxis=dict(title="Rendimiento anual esperado (%)",gridcolor="#1e293b"))
         st.plotly_chart(fig_ef, use_container_width=True)
+
+# ══════════════════════════════════════════════════════════════
+#  TAB 7 — TABLERO DE NOTICIAS POR SECTOR
+# ══════════════════════════════════════════════════════════════
+with tab7:
+    st.markdown("#### 📋 Tablero de Noticias — Economía y Mercados")
+    st.caption("Se actualiza automáticamente cada 30 minutos. Fuentes: RSS de medios financieros globales.")
+
+    FUENTES_NOTICIAS_SECTORES = {
+        "📈 Mercados y Bolsa": [
+            ("Reuters Mercados",  "https://feeds.reuters.com/reuters/businessNews"),
+            ("MarketWatch",       "https://feeds.marketwatch.com/marketwatch/topstories"),
+            ("Yahoo Finance",     "https://finance.yahoo.com/news/rssindex"),
+        ],
+        "💵 Divisas y Cripto": [
+            ("CoinDesk",          "https://www.coindesk.com/arc/outboundfeeds/rss/"),
+            ("Investing Forex",   "https://www.investing.com/rss/news_14.rss"),
+        ],
+        "🛢️ Materias Primas": [
+            ("Investing Commodities", "https://www.investing.com/rss/news_11.rss"),
+            ("OilPrice",          "https://oilprice.com/rss/main"),
+        ],
+        "🇲🇽 México y LATAM": [
+            ("El Economista",     "https://www.eleconomista.com.mx/rss/economia.xml"),
+            ("Expansión",         "https://expansion.mx/rss"),
+        ],
+        "💻 Tecnología": [
+            ("TechCrunch",        "https://techcrunch.com/feed/"),
+            ("The Verge",         "https://www.theverge.com/rss/index.xml"),
+        ],
+        "🏭 Economía Global": [
+            ("BBC Business",      "https://feeds.bbci.co.uk/news/business/rss.xml"),
+            ("FT Markets",        "https://www.ft.com/rss/home/uk"),
+        ],
+    }
+
+    @st.cache_data(ttl=1800, show_spinner=False)
+    def obtener_noticias_sector(sector_fuentes):
+        todas = {}
+        for sector, fuentes in sector_fuentes.items():
+            noticias_sector = []
+            for nombre, url in fuentes:
+                try:
+                    feed = feedparser.parse(url)
+                    for entry in feed.entries[:4]:
+                        titulo = entry.get("title","")
+                        link   = entry.get("link","#")
+                        fecha  = entry.get("published","")[:16] if entry.get("published") else ""
+                        if not titulo: continue
+                        s  = TextBlob(titulo).sentiment.polarity
+                        tl = titulo.lower()
+                        s += sum(0.15 for p in PALABRAS_POS if p in tl)
+                        s -= sum(0.15 for p in PALABRAS_NEG if p in tl)
+                        s  = max(-1, min(1, s))
+                        noticias_sector.append({
+                            "titulo": titulo, "link": link,
+                            "fuente": nombre, "fecha": fecha, "score": s
+                        })
+                except: pass
+            todas[sector] = sorted(noticias_sector, key=lambda x: x["score"], reverse=True)
+        return todas
+
+    with st.spinner("Cargando noticias por sector..."):
+        noticias_sector = obtener_noticias_sector(
+            tuple((k, tuple(v)) for k,v in FUENTES_NOTICIAS_SECTORES.items())
+        )
+
+    # Mostrar en grid de 2 columnas
+    sectores = list(FUENTES_NOTICIAS_SECTORES.keys())
+    for i in range(0, len(sectores), 2):
+        cols = st.columns(2)
+        for j, col_ui in enumerate(cols):
+            if i+j >= len(sectores): break
+            sector = sectores[i+j]
+            noticias = noticias_sector.get(sector, [])
+            with col_ui:
+                st.markdown(f"**{sector}**")
+                if not noticias:
+                    st.caption("Sin noticias disponibles ahora mismo.")
+                else:
+                    for n in noticias[:5]:
+                        score = n["score"]
+                        emoji = "📈" if score>0.05 else ("📉" if score<-0.05 else "➖")
+                        color = "#10b981" if score>0.05 else ("#ef4444" if score<-0.05 else "#94a3b8")
+                        st.markdown(
+                            f"<div style='background:#1e293b;border-left:3px solid {color};"
+                            f"padding:8px 12px;border-radius:4px;margin-bottom:6px'>"
+                            f"{emoji} <a href='{n['link']}' target='_blank' style='color:#e2e8f0;"
+                            f"text-decoration:none;font-size:13px'>{n['titulo'][:90]}</a>"
+                            f"<br><span style='color:#64748b;font-size:11px'>"
+                            f"{n['fuente']} · {n['fecha']}</span></div>",
+                            unsafe_allow_html=True
+                        )
+                st.markdown("")
+
+    # Score general del tablero
+    todos_scores = [n["score"] for nots in noticias_sector.values() for n in nots]
+    if todos_scores:
+        score_global = np.mean(todos_scores)
+        st.markdown("---")
+        c1,c2,c3 = st.columns(3)
+        with c1:
+            color_g = "normal" if score_global>0.1 else ("inverse" if score_global<-0.1 else "off")
+            st.metric("Sentimiento global del tablero", f"{score_global:+.3f}",
+                      "🟢 Positivo" if score_global>0.1 else ("🔴 Negativo" if score_global<-0.1 else "🟡 Neutro"),
+                      delta_color=color_g)
+        with c2:
+            st.metric("Total de noticias", str(len(todos_scores)))
+        with c3:
+            st.metric("Última actualización", datetime.now().strftime("%H:%M:%S"))
+
+# ══════════════════════════════════════════════════════════════
+#  TAB 8 — CALENDARIO ECONÓMICO
+# ══════════════════════════════════════════════════════════════
+with tab8:
+    st.markdown("#### 📅 Calendario Económico — Eventos que mueven los mercados")
+    st.info("Estos son los eventos más importantes que afectan tus inversiones. Las fechas marcadas en 🔴 son de alto impacto — los mercados suelen moverse fuerte ese día.")
+
+    # Eventos de alto impacto (actualizados manualmente con las fechas más relevantes)
+    @st.cache_data(ttl=3600, show_spinner=False)
+    def obtener_eventos_calendario():
+        # Intentar obtener eventos reales via RSS/scraping
+        eventos_fijos = [
+            # Formato: (fecha, evento, impacto, descripcion, afecta)
+            ("2026-06-04", "Decisión de tasas — Fed (FOMC)", "🔴 Alto", "La Fed decide si sube, baja o mantiene las tasas de interés. Es el evento más influyente para todos los mercados.", "S&P 500, Nasdaq, Bonos, Dólar"),
+            ("2026-06-11", "IPC Inflación EE.UU. (CPI)", "🔴 Alto", "Reporte mensual de inflación de EE.UU. Si es más alta de lo esperado, los mercados suelen caer.", "Todos los activos"),
+            ("2026-06-13", "Ventas minoristas EE.UU.", "🟡 Medio", "Mide el gasto del consumidor americano. Indicador de la salud económica.", "S&P 500, Dólar"),
+            ("2026-06-18", "PIB EE.UU. (revisión)", "🟡 Medio", "Revisión del crecimiento económico del trimestre anterior.", "S&P 500, Dólar"),
+            ("2026-06-25", "PCE Inflación (favorita de la Fed)", "🔴 Alto", "El indicador de inflación que más usa la Fed para sus decisiones. Muy relevante.", "Bonos, Dólar, S&P 500"),
+            ("2026-06-26", "Decisión de tasas — Banxico", "🔴 Alto", "Banco de México decide su tasa. Afecta directamente a acciones de la BMV y al peso.", "BMV, Peso MXN"),
+            ("2026-07-02", "Nóminas no agrícolas EE.UU.", "🔴 Alto", "Reporte de empleos de EE.UU. Mueve mercados globales el primer viernes de cada mes.", "Todos los activos"),
+            ("2026-07-09", "IPC Inflación EE.UU. (CPI)", "🔴 Alto", "Reporte mensual de inflación.", "Todos los activos"),
+            ("2026-07-16", "Temporada de resultados Q2", "🟡 Medio", "Las grandes empresas reportan ganancias del segundo trimestre.", "Nasdaq, S&P 500"),
+            ("2026-07-29", "Decisión de tasas — Fed (FOMC)", "🔴 Alto", "Segunda reunión del año donde la Fed puede mover tasas.", "S&P 500, Nasdaq, Bonos"),
+        ]
+        return eventos_fijos
+
+    eventos = obtener_eventos_calendario()
+    hoy = datetime.today().date()
+
+    # Separar en próximos y pasados
+    proximos = [(f,e,i,d,a) for f,e,i,d,a in eventos if datetime.strptime(f,"%Y-%m-%d").date() >= hoy]
+    pasados  = [(f,e,i,d,a) for f,e,i,d,a in eventos if datetime.strptime(f,"%Y-%m-%d").date() < hoy]
+
+    st.markdown("##### 🔜 Próximos eventos")
+    if not proximos:
+        st.caption("No hay eventos próximos registrados.")
+    else:
+        for fecha,evento,impacto,desc,afecta in proximos:
+            fecha_dt  = datetime.strptime(fecha,"%Y-%m-%d").date()
+            dias_rest = (fecha_dt - hoy).days
+            urgencia  = "#ef4444" if dias_rest<=3 else ("#f59e0b" if dias_rest<=7 else "#334155")
+            dias_txt  = "¡HOY!" if dias_rest==0 else (f"mañana" if dias_rest==1 else f"en {dias_rest} días")
+
+            st.markdown(
+                f"<div style='background:#1e293b;border-left:4px solid {urgencia};"
+                f"padding:12px 16px;border-radius:6px;margin-bottom:10px'>"
+                f"<div style='display:flex;justify-content:space-between;align-items:center'>"
+                f"<span style='color:#e2e8f0;font-weight:600;font-size:15px'>{evento}</span>"
+                f"<span style='color:{urgencia};font-size:13px;font-weight:600'>{dias_txt}</span></div>"
+                f"<div style='margin-top:4px'>"
+                f"<span style='color:#94a3b8;font-size:12px'>📅 {fecha} · {impacto} · </span>"
+                f"<span style='color:#64748b;font-size:12px'>Afecta: {afecta}</span></div>"
+                f"<div style='color:#cbd5e1;font-size:13px;margin-top:6px'>{desc}</div>"
+                f"</div>",
+                unsafe_allow_html=True
+            )
+
+    if pasados:
+        with st.expander("📂 Ver eventos pasados"):
+            for fecha,evento,impacto,desc,afecta in reversed(pasados):
+                st.markdown(
+                    f"<div style='background:#0f172a;border-left:3px solid #334155;"
+                    f"padding:8px 12px;border-radius:4px;margin-bottom:6px;opacity:0.7'>"
+                    f"<span style='color:#94a3b8;font-size:13px'>{fecha} · {evento} · {impacto}</span>"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
+
+    st.markdown("---")
+    st.markdown("##### 📌 ¿Por qué importan estos eventos?")
+    c1,c2,c3 = st.columns(3)
+    with c1:
+        st.markdown("""
+**🏦 Tasas de interés (Fed/Banxico)**
+Cuando suben las tasas → el dinero se vuelve más caro → las empresas invierten menos → las acciones tienden a bajar. Cuando bajan → al contrario.
+        """)
+    with c2:
+        st.markdown("""
+**📊 Inflación (CPI/PCE)**
+Inflación alta → la Fed sube tasas → mercados caen. Inflación bajando → posibles recortes → mercados suben. Es el indicador más seguido del mundo.
+        """)
+    with c3:
+        st.markdown("""
+**💼 Empleos (Nóminas)**
+Más empleos = economía fuerte = empresas ganan más = bolsa sube. Menos empleos = recesión posible = bolsa baja. Sale el primer viernes de cada mes.
+        """)
+
+# ══════════════════════════════════════════════════════════════
+#  TAB 9 — CORRELACIÓN DE ACTIVOS
+# ══════════════════════════════════════════════════════════════
+with tab9:
+    st.markdown("#### 🔗 Correlación entre Activos")
+    st.info("""
+**¿Para qué sirve esto?** Si dos activos tienen correlación alta (cerca de +1), se mueven juntos — cuando uno cae, el otro también cae. No sirve de nada tener ambos. 
+La clave de diversificar es tener activos con correlación **baja o negativa** — cuando uno cae, el otro sube y protege tu portafolio.
+    """)
+
+    if precios.empty or len(precios.columns) < 2:
+        st.warning("Necesitas al menos 2 activos seleccionados en el panel izquierdo.")
+    else:
+        retornos_corr = precios.pct_change().dropna()
+        matriz_corr   = retornos_corr.corr()
+
+        # Heatmap de correlación
+        fig_corr = go.Figure(go.Heatmap(
+            z=matriz_corr.values,
+            x=matriz_corr.columns.tolist(),
+            y=matriz_corr.index.tolist(),
+            colorscale=[
+                [0.0,  "#ef4444"],
+                [0.5,  "#1e293b"],
+                [1.0,  "#10b981"],
+            ],
+            zmid=0, zmin=-1, zmax=1,
+            text=[[f"{v:.2f}" for v in row] for row in matriz_corr.values],
+            texttemplate="%{text}",
+            textfont=dict(size=12, color="white"),
+            hovertemplate="<b>%{y} vs %{x}</b><br>Correlación: %{z:.3f}<extra></extra>",
+            colorbar=dict(
+                title=dict(text="Correlación", font=dict(color="#e2e8f0")),
+                tickfont=dict(color="#e2e8f0"),
+                thickness=15
+            )
+        ))
+        fig_corr.update_layout(
+            **tema_grafica(), height=max(350, len(matriz_corr)*60),
+            xaxis=dict(tickangle=-45, tickfont=dict(size=11)),
+            yaxis=dict(tickfont=dict(size=11)),
+            margin=dict(t=20,b=80,l=120,r=20)
+        )
+        st.plotly_chart(fig_corr, use_container_width=True)
+
+        # Interpretación automática
+        st.markdown("##### Interpretación")
+        pares = []
+        cols_list = list(matriz_corr.columns)
+        for i in range(len(cols_list)):
+            for j in range(i+1, len(cols_list)):
+                pares.append((cols_list[i], cols_list[j], matriz_corr.iloc[i,j]))
+
+        pares_sorted = sorted(pares, key=lambda x: abs(x[2]), reverse=True)
+
+        c1,c2 = st.columns(2)
+        with c1:
+            st.markdown("**🔴 Más correlacionados (evitar tener ambos)**")
+            for a,b,corr in [p for p in pares_sorted if p[2]>0.5][:5]:
+                st.markdown(
+                    f"<div style='background:#450a0a;border-radius:6px;padding:8px 12px;margin-bottom:4px'>"
+                    f"<span style='color:#fca5a5'>{a} ↔ {b}: <b>{corr:.2f}</b></span>"
+                    f"<br><span style='color:#94a3b8;font-size:11px'>Se mueven juntos — poca diversificación</span>"
+                    f"</div>", unsafe_allow_html=True)
+
+        with c2:
+            st.markdown("**🟢 Menos correlacionados (buena diversificación)**")
+            for a,b,corr in [p for p in pares_sorted if p[2]<0.3][:5]:
+                color_bg = "#064e3b" if corr>=0 else "#1e3a5f"
+                st.markdown(
+                    f"<div style='background:{color_bg};border-radius:6px;padding:8px 12px;margin-bottom:4px'>"
+                    f"<span style='color:#6ee7b7'>{a} ↔ {b}: <b>{corr:.2f}</b></span>"
+                    f"<br><span style='color:#94a3b8;font-size:11px'>Buena combinación para diversificar</span>"
+                    f"</div>", unsafe_allow_html=True)
+
+        # Gráfica de retornos comparativos (dispersión)
+        st.markdown("---")
+        st.markdown("##### Dispersión de retornos diarios")
+        st.caption("Cada punto es un día. Si los puntos forman una línea diagonal ascendente, los activos están correlacionados.")
+
+        if len(cols_list) >= 2:
+            act_x = st.selectbox("Eje X", cols_list, index=0, key="corr_x")
+            act_y = st.selectbox("Eje Y", cols_list, index=min(1,len(cols_list)-1), key="corr_y")
+
+            if act_x != act_y:
+                rx = retornos_corr[act_x]*100
+                ry = retornos_corr[act_y]*100
+                corr_val = matriz_corr.loc[act_x, act_y]
+
+                fig_disp = go.Figure()
+                fig_disp.add_trace(go.Scatter(
+                    x=rx, y=ry, mode="markers",
+                    marker=dict(color="#6366f1", size=4, opacity=0.5),
+                    hovertemplate=f"{act_x}: %{{x:.2f}}%<br>{act_y}: %{{y:.2f}}%<extra></extra>"
+                ))
+                # Línea de tendencia
+                z = np.polyfit(rx.dropna(), ry[rx.dropna().index], 1)
+                p = np.poly1d(z)
+                x_line = np.linspace(rx.min(), rx.max(), 100)
+                fig_disp.add_trace(go.Scatter(
+                    x=x_line, y=p(x_line), mode="lines",
+                    line=dict(color="#f59e0b", width=2, dash="dash"),
+                    name=f"Tendencia (r={corr_val:.2f})"
+                ))
+                fig_disp.update_layout(**tema_grafica(), height=380,
+                    xaxis=dict(title=f"Retorno diario {act_x} (%)", gridcolor="#1e3a5f"),
+                    yaxis=dict(title=f"Retorno diario {act_y} (%)", gridcolor="#1e293b"))
+                st.plotly_chart(fig_disp, use_container_width=True)
+
+                if abs(corr_val)>0.7:
+                    st.warning(f"⚠️ Correlación alta ({corr_val:.2f}) — estos activos se mueven muy juntos. Considera reemplazar uno por algo menos correlacionado.")
+                elif abs(corr_val)<0.3:
+                    st.success(f"✅ Correlación baja ({corr_val:.2f}) — buena combinación para diversificar tu portafolio.")
+                else:
+                    st.info(f"🟡 Correlación moderada ({corr_val:.2f}) — cierta relación pero suficiente diversificación.")
+
+# ══════════════════════════════════════════════════════════════
+#  TAB 10 — HISTORIAL DE SEÑALES
+# ══════════════════════════════════════════════════════════════
+with tab10:
+    st.markdown("#### 📜 Historial de Señales Generadas")
+    st.info("Registro de todas las señales que el sistema ha generado. Con el tiempo esto te mostrará qué tan confiable es el análisis.")
+
+    # Inicializar historial en session_state
+    if "historial_señales" not in st.session_state:
+        st.session_state["historial_señales"] = []
+
+    # Agregar señal actual al historial automáticamente
+    if "señal_tec" in dir() and señal_tec != 0:
+        señal_actual = {
+            "Fecha/Hora"  : datetime.now().strftime("%d/%m/%Y %H:%M"),
+            "Activo"      : act_bt,
+            "Señal técnica": "📈 COMPRA" if señal_tec==1 else "📉 VENTA",
+            "Sentimiento" : f"{score_sent:+.3f}" if "score_sent" in dir() else "N/A",
+            "Score final" : f"{score_comb:+.3f}" if "score_comb" in dir() else "N/A",
+            "Decisión"    : ("🟢 FAVORABLE" if score_comb>0.2
+                            else ("🔴 DESFAVORABLE" if score_comb<-0.2
+                            else "🟡 MIXTA")) if "score_comb" in dir() else "N/A",
+        }
+        # Solo agregar si es diferente a la última
+        if (not st.session_state["historial_señales"] or
+            st.session_state["historial_señales"][-1]["Fecha/Hora"] != señal_actual["Fecha/Hora"]):
+            st.session_state["historial_señales"].append(señal_actual)
+
+    historial = st.session_state["historial_señales"]
+
+    if not historial:
+        st.warning("Aún no hay señales registradas. Ve a la pestaña **Noticias y Señal** para generar la primera señal y aparecerá aquí.")
+    else:
+        # Métricas del historial
+        total_h    = len(historial)
+        favorables = sum(1 for s in historial if "FAVORABLE" in s["Decisión"] and "DES" not in s["Decisión"])
+        desfav     = sum(1 for s in historial if "DESFAVORABLE" in s["Decisión"])
+        mixtas     = total_h - favorables - desfav
+
+        c1,c2,c3,c4 = st.columns(4)
+        with c1: st.metric("Total señales",     str(total_h))
+        with c2: st.metric("🟢 Favorables",     str(favorables))
+        with c3: st.metric("🔴 Desfavorables",  str(desfav))
+        with c4: st.metric("🟡 Mixtas",         str(mixtas))
+
+        st.markdown("---")
+        st.markdown("##### Registro completo")
+        df_hist = pd.DataFrame(list(reversed(historial)))
+        st.dataframe(df_hist, use_container_width=True, hide_index=True)
+
+        # Gráfica de evolución del score
+        if len(historial) > 1:
+            scores_hist = []
+            for s in historial:
+                try: scores_hist.append(float(s["Score final"]))
+                except: scores_hist.append(0)
+
+            fechas_hist = [s["Fecha/Hora"] for s in historial]
+            fig_hist = go.Figure()
+            colores_hist = ["#10b981" if s>0.2 else ("#ef4444" if s<-0.2 else "#f59e0b") for s in scores_hist]
+            fig_hist.add_trace(go.Bar(
+                x=fechas_hist, y=scores_hist,
+                marker_color=colores_hist, opacity=0.85,
+                hovertemplate="Fecha: %{x}<br>Score: %{y:+.3f}<extra></extra>"
+            ))
+            fig_hist.add_hline(y=0.2,  line_dash="dash", line_color="#10b981", opacity=0.5)
+            fig_hist.add_hline(y=-0.2, line_dash="dash", line_color="#ef4444", opacity=0.5)
+            fig_hist.add_hline(y=0,    line_dash="dot",  line_color="#475569", opacity=0.4)
+            fig_hist.update_layout(**tema_grafica(), height=300,
+                xaxis=dict(gridcolor="#1e293b"),
+                yaxis=dict(title="Score combinado", gridcolor="#1e3a5f", range=[-1,1]))
+            st.plotly_chart(fig_hist, use_container_width=True)
+
+        # Botón para limpiar historial
+        st.markdown("---")
+        if st.button("🗑️ Limpiar historial de esta sesión", type="secondary"):
+            st.session_state["historial_señales"] = []
+            st.rerun()
+
+        st.caption("⚠️ El historial se guarda mientras el dashboard esté abierto. Al cerrar la sesión se reinicia. En una versión futura se guardará permanentemente.")
