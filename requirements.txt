@@ -1,0 +1,8 @@
+yfinance
+pandas
+plotly
+feedparser
+textblob
+requests
+streamlit
+numpy
